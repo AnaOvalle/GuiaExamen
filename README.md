@@ -1,2 +1,3 @@
-# GuiaExamen
-Guia de examen: resumen de los capitulos 2, 3, 4
+# Capitulo 2. Tipos de datos y sentencias de alto nivel
+## 2.1.1. Modos de direccionamiento del ARM
+
