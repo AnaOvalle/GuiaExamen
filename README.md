@@ -75,3 +75,42 @@ Se exploran diferentes enfoques para manejar la transferencia de múltiples par�
 8. Recuperar con pop la lista de registros salvaguardados.
 9. Retornar la función con bx lr volviendo al código llamador, exactamente a la instrucción que hay tras el bl.
 10. El llamador equilibra la pila en caso de haber pasado parámetros por ella
+# Capítulo 4 E/S a bajo nivel
+## 4.1.1. Librerías y Kernel, las dos capas que queremos saltarnos
+Una primera capa se encuentra en la librería runtime que acompaña al ejecutable, la cual incluye sólamente el fragmento de código de la función que necesitemos, en este caso en printf. El resto de funciones de la librería (stdio), si no las invocamos no aparecen en el ejecutable. El enlazador se encarga de todo esto, tanto de ubicar las funciones que llamemos desde ensamblador, como de poner la dirección numérica correcta que corresponda en la instrucción bl printf.
+Este fragmento de código perteneciente a la primera capa sí que podemos depurarlo mediante gdb. Lo que hace es, a parte del formateo que realiza la propia función, trasladar al sistema operativo una determinada cadena para que éste lo muestre por pantalla. Es una especie de traductor intermedio que nos facilita las cosas.
+La segunda capa va desde que hacemos la llamada al sistema (System Call o Syscall) hasta que se produce la transferencia de datos al periférico, retornando desde la llamada al sistema y volviendo a la primera capa, que a su vez retornará el control a la llamada a librería que hicimos en nuestro programa inicialmente.
+
+En esta segunda capa se ejecuta código del kernel, el cual no podemos depurar.
+Además el procesador entra en un modo privilegiado, ya que en modo usuario (el que se ejecuta en nuestro programa ensamblador y dentro de la librería) no tenemos privilegios suficientes como para acceder a la zona de memoria que mapea los periféricos.
+
+En general se tiende a usar una lista reducida de posibles llamadas a sistema, y que éstas sean lo más polivalentes posibles. En este caso vemos que no existe una función específica para escribir en pantalla. Lo que hacemos es escribir bytes en un fichero, pero usando un manejador especial conocido como salida estándar, con lo cual todo lo que escribamos a este fichero especial aparecerá por pantalla.
+Pero el propósito de este capítulo no es saltarnos una capa para comunicarnos directamente con el sistema operativo. Lo que queremos es saltarnos las dos capas y enviarle órdenes directamente a los periféricos. Para esto tenemos prescindir del sistema operativo, o lo que es lo mismo, hacer nosotros de sistema operativo para realizar las tareas que queramos.
+## 4.1.2. Ejecutar código en Bare Metal
+Explica que en un entorno Bare Metal, debemos omitir el sistema operativo y acceder directamente al hardware. Este modo de trabajo nos permite realizar tareas como controlar periféricos o incluso construir nuestro propio sistema operativo desde cero.
+
+Para ejecutar código en Bare Metal, el proceso de ensamblaje y vinculación es diferente en comparación con la creación de ejecutables. En un programa Bare Metal, creamos un archivo binario simple sin encabezado, que contiene el código de máquina de nuestro programa. Este archivo binario, llamado kernel.img, se carga en la RAM en la dirección 0x8000. El proceso de ensamblar y vincular programas Bare Metal implica el uso del comando 'as' para ensamblar el código y el comando 'ld' para vincularlo.
+
+En general, el tema proporciona una descripción general de cómo ejecutar código en un entorno Bare Metal y destaca las diferencias en el proceso de ensamblaje y vinculación en comparación con la creación de ejecutables.
+## 4.2. Acceso a periféricos
+Se mencionan dos periféricos específicos: GPIO (Entrada/Salida de Propósito General) y el temporizador del sistema. Se proporcionan ejemplos de programas Bare Metal que utilizan estos periféricos, como un LED parpadeante con un bucle de retardo y un LED parpadeante con un temporizador. También se menciona un ejemplo de sonido utilizando el temporizador. Se presentan ejercicios relacionados con la cadencia variable utilizando un bucle de retardo o un temporizador, así como un ejercicio relacionado con la escala musical.
+## 4.2.1. GPIO (General-Purpose Input/Output)
+El GPIO es un conjunto de señales mediante las cuales la CPU se comunica condistintas partes de la Rasberry tanto internamente (audio analógico, tarjeta SD o LEDs internos) como externamente a través de los conectores P1 y P5. Como la mayor parte de las señales se encuentran en el conector P1 (ver figura 4.3), normalmente este conector se denomina GPIO. Nosotros no vamos a trabajar con señales GPIO que no pertenezcan a dicho conector, por lo que no habrá confusiones.
+El GPIO contiene en total 54 señales, de las cuales 17 están disponibles a través del conector GPIO (26 en los modelos A+/B+). Como nuestra placa auxiliar emplea la fila inferior del conector, sólo dispondremos de 9 señales.
+##### GPFSELn
+GPFSELn es un puerto en el GPIO (General Purpose Input/Output) de la Raspberry Pi que se utiliza para cambiar la funcionalidad de los pines GPIO. Hay varios puertos GPFSELn, donde "n" representa un número del 0 al 5. Cada puerto GPFSELn contiene grupos funcionales llamados FSELx (del 0 al 9) que se utilizan para configurar la función de los pines GPIO. Cada grupo FSELx tiene 3 bits para configurar la función del pin correspondiente. Las posibles configuraciones son: entrada, salida, función alternativa 0, función alternativa 1, función alternativa 2, función alternativa 3, función alternativa 4 y función alternativa 5. En el caso de querer utilizar un pin GPIO como salida genérica, se utiliza la configuración de salida.
+##### GPSETn y GPCLRn
+GPSETn y GPCLRn son registros utilizados para controlar los pines de entrada/salida de uso general (GPIO) en Raspberry Pi.
+
+- GPSETn es un registro utilizado para configurar los pines GPIO en un estado alto (1), que activa la salida correspondiente o configura el pin como entrada con una resistencia pull-up habilitada.
+- GPCLRn es un registro utilizado para borrar los pines GPIO a un estado bajo (0), lo que apaga la salida correspondiente o configura el pin como entrada con una resistencia desplegable habilitada.
+Estos registros se utilizan para manipular el estado de los pines GPIO sin la necesidad de realizar operaciones complejas en bits individuales. Proporcionan una forma cómoda de controlar el estado de varios pines simultáneamente.
+##### Otros registros
+- GPLEVn. Estos puertos devuelven el valor del pin respectivo. Si dicho pin está en torno a 0V devolverá un cero, si está en torno a 3.3V devolverá un 1.
+- GPEDSn. Sirven para detectar qué pin ha provocado una interrupción en caso de usarlo como lectura. Al escribir en ellos también podemos notificar que ya hemos procesado la interrupción y que por tanto estamos listos para que nos vuelvan a interrumpir sobre los pines que indiquemos.
+- GPRENn. Con estos puertos enmascaramos los pines que queremos que provoquen una interrupción en flanco de subida, esto es cuando hay una transición de 0 a 1 en el pin de entrada.
+- GPFENn. Lo mismo que el anterior pero en flanco de bajada.
+- GPHENn. Enmascaramos los pines que provocarán una interrupción al detectar un nivel alto (3.3V) por dicho pin.
+- GPLENn. Lo mismo que el anterior pero para un nivel bajo (0V).
+- GPARENn y GPAFENn. Tienen funciones idénticas a GPRENn y GPFENn, pero permiten detectar flancos en pulsos de poca duración.
+- GPPUD y GPPUDCLKn. Conectan resistencias de pull-up y de pull-down sobre los pines que deseemos. Para más información ver el último ejemplo del siguiente capítulo.
